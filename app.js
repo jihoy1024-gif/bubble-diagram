@@ -208,6 +208,9 @@ function catmull(pts) {
 
 // ---------------------------------------------------------------- view transforms
 const w2s = (v, x, y) => ({ x: x * v.z + v.tx, y: y * v.z + v.ty });
+const canvasW = () => svg.clientWidth || Math.max(320, window.innerWidth - 536) || 900;
+const canvasH = () => svg.clientHeight || Math.max(320, window.innerHeight - 76) || 600;
+const viewOk = v => v && [v.z, v.tx, v.ty].every(Number.isFinite) && v.z > 0;
 const toW = sp => ({ x: (sp.x - view.tx) / view.z, y: (sp.y - view.ty) / view.z });
 function spt(e) { const r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 const gridFt = () => { const g = +S.settings.gridSize || 10; return isM() ? g / FT_M : g; };
@@ -268,7 +271,13 @@ async function loadLocal() {
   S = Object.assign(freshState(), raw.state);
   S.settings = Object.assign(freshState().settings, raw.state.settings || {});
   S.pathStyle = Object.assign(freshState().pathStyle, raw.state.pathStyle || {});
-  if (raw.view) view = raw.view;
+  const badBlock = o => o.type === 'block' && ![o.cx, o.cy, o.w, o.h].every(Number.isFinite);
+  if ((raw.state.objects || []).some(badBlock)) {
+    if (/^Example/.test(raw.state.name || '')) return false;
+    raw.state.objects.forEach(o => { if (badBlock(o)) { o.cx = Number.isFinite(o.cx) ? o.cx : 0; o.cy = Number.isFinite(o.cy) ? o.cy : 0; } });
+    raw.view = null;
+  }
+  if (viewOk(raw.view)) view = raw.view;
   if (S.backdrop) {
     try {
       const rec = await idb.get('backdrop');
@@ -283,6 +292,7 @@ async function loadLocal() {
 let raf = 0;
 function requestRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
 function render() {
+  if (!viewOk(view)) { view = { z: 4, tx: canvasW() / 2, ty: canvasH() / 2 }; zoomFit(); }
   const W = svg.clientWidth, H = svg.clientHeight;
   syncBackdropImage();
   gGrid.innerHTML = S.settings.grid ? gridSVG(view, W, H) : '';
@@ -618,7 +628,7 @@ function createBlock({ name, unitArea, qty = 1, zone = '' }) {
 }
 // Spiral out from the view centre until the new block clears existing blocks.
 function placeBlock(b) {
-  const c = toW({ x: svg.clientWidth / 2, y: svg.clientHeight / 2 });
+  const c = toW({ x: canvasW() / 2, y: canvasH() / 2 });
   const r = Math.hypot(b.w, b.h) / 2;
   const others = blocks();
   const free = (x, y) => others.every(o => Math.hypot(o.cx - x, o.cy - y) > r + Math.hypot(o.w, o.h) / 2 + 2);
@@ -1049,8 +1059,8 @@ function zoomFit() {
   const bd = S.backdrop;
   if (bd && bd.visible) pts.push({ x: bd.x, y: bd.y }, { x: bd.x + bd.w * bd.ftPerPx, y: bd.y + bd.h * bd.ftPerPx });
   S.objects.forEach(o => { const b = bboxOf(o); pts.push({ x: b.x0, y: b.y0 }, { x: b.x1, y: b.y1 }); });
-  if (!pts.length) { view = { z: 4, tx: svg.clientWidth / 2, ty: svg.clientHeight / 2 }; requestRender(); return; }
-  const b = bboxOfPts(pts), W = svg.clientWidth, H = svg.clientHeight, pad = 40;
+  if (!pts.length) { view = { z: 4, tx: canvasW() / 2, ty: canvasH() / 2 }; requestRender(); return; }
+  const b = bboxOfPts(pts), W = canvasW(), H = canvasH(), pad = 40;
   const z = Math.min((W - 2 * pad) / Math.max(1, b.x1 - b.x0), (H - 2 * pad - 30) / Math.max(1, b.y1 - b.y0));
   view.z = Math.max(0.02, Math.min(400, z));
   view.tx = (W - (b.x1 - b.x0) * view.z) / 2 - b.x0 * view.z;
@@ -1657,7 +1667,7 @@ async function loadExample() {
   bd.ftPerPx = (32 / 3) / bd.dpi; bd.calibrated = true; bd.calibNote = 'Drawing scale 3/32" = 1\'-0" at ' + bd.dpi + ' dpi';
   S.name = 'Example – community garden';
   // centre the view on the lot before placing programs
-  const W = svg.clientWidth, H = svg.clientHeight, lot = { x: 1230 * bd.ftPerPx, y: 1760 * bd.ftPerPx };
+  const W = canvasW(), H = canvasH(), lot = { x: 1230 * bd.ftPerPx, y: 1760 * bd.ftPerPx };
   view.z = Math.min(W, H) / 170; view.tx = W / 2 - lot.x * view.z; view.ty = H / 2 - lot.y * view.z;
   addPrograms(['Lobby 1200 @Public', 'Classroom 900 @Learning', 'Teaching kitchen 900 @Learning', 'Greenhouse 1500 @Garden', 'Tool shed 300 @Garden', 'Restroom 120 x2 @Public'].join('\n'));
   const id = n => blocks().find(b => b.name === n).id;
