@@ -273,7 +273,7 @@ async function loadLocal() {
   S.pathStyle = Object.assign(freshState().pathStyle, raw.state.pathStyle || {});
   const badBlock = o => o.type === 'block' && ![o.cx, o.cy, o.w, o.h].every(Number.isFinite);
   if ((raw.state.objects || []).some(badBlock)) {
-    if (/^Example/.test(raw.state.name || '')) return false;
+    if (/^Example/.test(raw.state.name || '')) { S = freshState(); return false; }
     raw.state.objects.forEach(o => { if (badBlock(o)) { o.cx = Number.isFinite(o.cx) ? o.cx : 0; o.cy = Number.isFinite(o.cy) ? o.cy : 0; } });
     raw.view = null;
   }
@@ -1660,6 +1660,8 @@ async function fetchSampleFile() {
 // First open with nothing saved: a worked example, clearly named as one.
 async function loadExample() {
   const file = await fetchSampleFile();
+  S = Object.assign(freshState(), { settings: S.settings, pathStyle: S.pathStyle, units: S.units });
+  sel.clear();
   const buf = new Uint8Array(await file.arrayBuffer());
   const url = await blobToDataURL(file), img = await loadImg(url);
   setBackdrop({ src: url, name: file.name, w: img.naturalWidth, h: img.naturalHeight, dpi: readDpi(buf) || 100, img });
